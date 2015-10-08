@@ -292,7 +292,7 @@ and the <font color='Red'>**Out of Sample Error**</font> = 1 - `r Model2_Accurac
 
 ## CONCLUSION
 
-Based on the results of the **Confusion Matrix** and **Out of Sample Error** on both prediction models, it shows that the <font color='Red'>**Random Forest model is far more accurate and more reliable than the Decision Tree** model</font>.
+Based on the results of the **Confusion Matrix** and **Out of Sample Error** on both prediction models, it shows that the <font color='Red'>**Random Forest model is far more accurate and more reliable than the Decision Tree model**</font>.
 
 Since the <font color='Red'>**Random Forest model is the most accurate model**</font> that we can derive thus far and the **Out of Sample Error is very small**, we will use it for Part 2 of the assignment to predict the outcome from a set of Test Data.
 
