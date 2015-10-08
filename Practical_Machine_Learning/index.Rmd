@@ -1,0 +1,368 @@
+---
+title       : Practical Machine Learning
+subtitle    : Prediction Assignment
+author      : Stephen Lye
+job         : 8 Oct 2015
+framework   : io2012        # {io2012, html5slides, shower, dzslides, ...}
+highlighter : highlight.js  # {highlight.js, prettify, highlight}
+hitheme     : tomorrow      # 
+widgets     : [mathjax, quiz, bootstrap] # {mathjax, quiz, bootstrap}
+mode        : selfcontained # {standalone, draft}
+knit        : slidify::knit2slides
+assets      : {assets: ../../assets}
+---
+
+<style type="text/css">
+body {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  font-size: 9px;
+  background: grey transparent;
+}
+</style>
+
+## OVERVIEW
+
+The purpose of this project is <font color='Purple'>**build a machine learning algorithm**</font> to predict activity quality from activity monitors.
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+<font color='Red'>
+Note: The data for this project comes from this source:
+
+http://groupware.les.inf.puc-rio.br/har
+</font>
+
+--- .class #id
+<font color='Red'>
+<b>STEP 1 - INITIAL SETUP AND LOAD LIBRARIES</b>
+</font>
+```{r echo = TRUE, message = FALSE, error = FALSE, warning = FALSE}
+# Clear Workspace
+rm(list=ls())
+
+# Load Libraries
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+```
+
+--- .class #id
+<font color='Red'>
+<b>STEP 2 - LOAD DATA</b>
+</font>
+```{r echo = TRUE, cache = TRUE, message = FALSE, error = FALSE, warning = FALSE}
+# Download source data files
+SrcURL <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+DestFile <- 'pml-training.csv'
+if(!file.exists(DestFile)) {download.file(url = SrcURL, destfile = DestFile, cacheOK = TRUE)}
+
+# Read Data
+if(!exists('df_Train')) {df_Train <- read.csv(DestFile, header = TRUE, sep = ',')}
+```
+
+Show the number of **Rows** and **Columns** of data
+
+Data Rows = `r format(dim(df_Train)[1], big.mark = ',')`  
+Data Columns = `r format(dim(df_Train)[2], big.mark = ',')`
+
+--- .class #id
+### Show a <font color='Red'>**Sample**</font> of the data
+```{r echo = TRUE}
+head(df_Train, 2L)
+```
+
+--- .class #id
+### Show the <font color='Red'>**column names**</font> of the data
+```{r echo = TRUE}
+names(df_Train)
+```
+
+--- .class #id
+<font color='Red'>
+<b>STEP 3 - CLEAN THE DATA</b>
+</font>  
+Before we start building the models for prediction, we must first clean up the raw data by removing columns that are not required for analysis, removing columns with mostly NA data and removing data with Near Zero Variance (NZV).
+
+<font color='Purple'>
+REMOVE UNNECESSARY COLUMNS 1 - 7 AS IT IS NOT MEANINGFUL FOR ANALYSIS
+</font>
+```{r echo = TRUE, message = FALSE, error = FALSE, warning = FALSE}
+df_Train <- df_Train[, -c(1:7)]
+```
+
+Show the number of **Rows** and **Columns** of data **after removing the unnecessary columns**
+
+Data Rows = `r format(dim(df_Train)[1], big.mark = ',')`  
+Data Columns = `r format(dim(df_Train)[2], big.mark = ',')`
+
+--- .class #id
+<font color='Purple'>
+REMOVE COLUMNS WITH 70% NA VALUES
+</font>
+```{r echo = TRUE, message = FALSE, error = FALSE, warning = FALSE}
+Cutoff_Level <- nrow(df_Train) * 0.7
+df_Train <- df_Train[, colSums(is.na(df_Train)) <= Cutoff_Level]
+```
+
+Show the number of **Rows** and **Columns** of data **after removing the columns with at least 70% of NA values**
+
+Data Rows = `r format(dim(df_Train)[1], big.mark = ',')`  
+Data Columns = `r format(dim(df_Train)[2], big.mark = ',')`
+
+<font color='Purple'>
+REMOVE COLUMNS WITH NEAR ZERO VARIANCE (NZV)
+</font>
+```{r echo = TRUE, message = FALSE, error = FALSE, warning = FALSE}
+Train_NZV <- nearZeroVar(df_Train, saveMetrics = TRUE)
+Cols2Keep <- rownames(Train_NZV[Train_NZV$nzv == FALSE, ])
+df_Train <- df_Train[Cols2Keep]
+```
+
+Show the number of **Rows** and **Columns** of data **after removing the columns with Near Zero Variance (NZV)**
+
+Data Rows = `r format(dim(df_Train)[1], big.mark = ',')`  
+Data Columns = `r format(dim(df_Train)[2], big.mark = ',')`
+
+--- .class #id
+<font color='Red'>
+<b>STEP 4 - SPLIT DATA INTO 2 SETS FOR ANALYSIS</b>
+</font>  
+After performing the data cleaning, we now split the original data set into 2 - the 1st set is for data sampling and the 2nd set is for cross validation.
+
+<font color='Purple'>
+SPLIT THE ORIGINAL DATA SET INTO 2 SEPARATE DATA SETS - ONE WITH 60% OF THE ORIGINAL DATA AND THE OTHER WITH THE REMAINING 40%.
+</font>
+```{r echo = TRUE, message = FALSE, error = FALSE, warning = FALSE}
+InclData <- createDataPartition(y = df_Train$classe, p = 0.6, list = FALSE)
+df_Train_60 <- df_Train[InclData, ]
+df_Train_40 <- df_Train[-InclData, ]
+```
+
+<font color='Purple'>
+REMOVE ORIGINAL DATA SET AS IT IS NO LONGER REQUIRED
+</font>
+```{r echo = TRUE, message = FALSE, error = FALSE, warning = FALSE}
+rm(df_Train)
+```
+
+--- .class #id
+<font color='Purple'>
+<b>DATA SET 1 (60%) - df_Train_60</b>
+</font>  
+Show the number of **Rows** and **Columns** of data from **Data Set 1 (df_Train_60) which has 60% of the data from the original data set**
+
+Data Rows = `r format(dim(df_Train_60)[1], big.mark = ',')`  
+Data Columns = `r format(dim(df_Train_60)[2], big.mark = ',')`
+
+
+<font color='Purple'>
+<b>DATA SET 2 (40%) - df_Train_40</b>
+</font>  
+Show the number of **Rows** and **Columns** of data from **Data Set 2 (df_Train_40) which has 40% of the data from the original data set**
+
+Data Rows = `r format(dim(df_Train_40)[1], big.mark = ',')`  
+Data Columns = `r format(dim(df_Train_40)[2], big.mark = ',')`
+
+--- .class #id
+<font color='Red'>
+<b>STEP 5 - PERFORM MACHINE LEARNING ON DECISION TREE</b>
+</font>  
+After our data sets have been prepared, we now proceed to <font color='Red'>**build the appropriate prediction models using Machine Learning**</font>. We first start with a <font color='Purple'>**Decision Tree**</font> model.
+
+```{r echo = TRUE, message = FALSE, error = FALSE, warning = FALSE}
+# Set seed
+set.seed(1000)
+
+# Use ML Algo for prediction - Decision Tree
+PredictionModel1 <- rpart(classe ~ ., data = df_Train_60, method = 'class')
+
+# Perform prediction
+DT_Prediction <- predict(PredictionModel1, df_Train_40, type = 'class')
+```
+
+--- .class #id
+<font color='Red'>
+<b>STEP 6 - VIEW DECISION TREE</b>
+</font>  
+We **view the contents of the Decision Tree** as shown below:-
+```{r echo = TRUE, message = FALSE, error = FALSE, warning = FALSE}
+print(PredictionModel1)
+```
+
+--- .class #id
+<font color='Red'>
+<b>STEP 7 - VISUALISE DECISION TREE</b>
+</font>  
+We **visualise the Decision Tree** by the plot below:-
+```{r echo = TRUE, message = FALSE, error = FALSE, warning = FALSE, fig.height = 6, fig.width = 8}
+fancyRpartPlot(PredictionModel1, cex = .5, under.cex = 1, shadow.offset = 0)
+```
+
+--- .class #id
+<font color='Red'>
+<b>STEP 8 - SHOW DECISION TREE RESULTS</b>
+</font>  
+We now show the results of the <font color='Red'>**Decision Tree**</font> prediction model by using the <font color='Purple'>**Confusion Matrix**</font>.
+
+```{r echo = TRUE, eval = FALSE}
+Results <- confusionMatrix(DT_Prediction, df_Train_40$classe)
+Results
+```
+
+--- .class #id
+```{r echo = FALSE, message = FALSE, error = FALSE, warning = FALSE, results = 'markup'}
+Results <- confusionMatrix(DT_Prediction, df_Train_40$classe)
+Results
+```
+
+--- .class #id
+<font color='Purple'>
+<b>DECISION TREE RESULT</b>
+</font>
+```{r echo = FALSE}
+Model1_Accuracy <- as.character(Results)
+Model1_Accuracy <- round(as.numeric(substring(Model1_Accuracy[3], 3, 10)), digits = 4)
+```
+
+The result shows that the accuracy of this model is only **`r Model1_Accuracy`** ie. **`r Model1_Accuracy * 100`%** accurate.
+
+This is <font color='Red'>**not good enough**</font>.
+
+--- .class #id
+<font color='Red'>
+<b>STEP 9 - PERFORM MACHINE LEARNING ON RANDOM FOREST</b>
+</font>  
+As the previous prediction model didn't provide us with a high level of accuracy, we will now proceed to <font color='Red'>**build a better prediction model**</font> by using the <font color='Purple'>**Random Forest**</font> method.
+
+```{r echo = TRUE}
+# Use ML Algo for prediction - Random Forest
+PredictionModel2 <- randomForest(classe ~. , data = df_Train_60)
+
+# Perform prediction
+RF_Prediction <- predict(PredictionModel2, df_Train_40, type = 'class')
+```
+
+--- .class #id
+<font color='Red'>
+<b>STEP 10 - SHOW RANDOM FOREST RESULTS</b>
+</font>  
+We now show the results of the <font color='Red'>**Random Forest**</font> prediction model by using the <font color='Purple'>**Confusion Matrix**</font>.
+
+```{r echo = TRUE, eval = FALSE}
+Results <- confusionMatrix(RF_Prediction, df_Train_40$classe)
+Results
+```
+
+--- .class #id
+```{r echo = FALSE, message = FALSE, error = FALSE, warning = FALSE, results = 'markup'}
+Results <- confusionMatrix(RF_Prediction, df_Train_40$classe)
+Results
+```
+
+--- .class #id
+<font color='Purple'>
+<b>RANDOM FOREST RESULT</b>
+</font>
+```{r echo = FALSE}
+Model2_Accuracy <- as.character(Results)
+Model2_Accuracy <- round(as.numeric(substring(Model2_Accuracy[3], 3, 10)), digits = 4)
+```
+
+The result shows that the accuracy of this model is **`r Model2_Accuracy`** ie. **`r Model2_Accuracy * 100`%** accurate.
+
+This is <font color='Green'>**good enough**</font>.
+
+--- .class #id
+<font color='Red'>
+<b>STEP 11 - SHOW EXPECTED OUT OF SAMPLE ERROR</b>
+</font>  
+Out of Sample Error is calculated as `1 - Accuracy`.
+
+For the <font color='Green'>**1st Prediction Model**</font> using <font color='Purple'>**Decision Tree**</font>,  
+the <font color='Red'>**Accuracy**</font> = **`r Model1_Accuracy`**  
+and the <font color='Red'>**Out of Sample Error**</font> = 1 - `r Model1_Accuracy` = **`r 1 - Model1_Accuracy`**
+
+For the <font color='Green'>**2nd Prediction Model**</font> using <font color='Purple'>**Random Forest**</font>,  
+the <font color='Red'>**Accuracy**</font> = **`r Model2_Accuracy`**  
+and the <font color='Red'>**Out of Sample Error**</font> = 1 - `r Model2_Accuracy` = **`r 1 - Model2_Accuracy`**
+
+## CONCLUSION
+
+Based on the results of the **Confusion Matrix** and **Out of Sample Error** on both prediction models, it shows that the <font color='Red'>**Random Forest model is far more accurate and more reliable than the Decision Tree** model</font>.
+
+Since the <font color='Red'>**Random Forest model is the most accurate model**</font> that we can derive thus far and the **Out of Sample Error is very small**, we will use it for Part 2 of the assignment to predict the outcome from a set of Test Data.
+
+--- .class #id
+## ASSIGNMENT PART 2
+
+<font color='Red'>
+STEP 1 - LOAD TEST DATA
+</font>
+```{r echo = TRUE, message = FALSE, error = FALSE, warning = FALSE}
+SrcURL <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+DestFile <- 'pml-testing.csv'
+
+if(!exists('df_Test')) {df_Test <- read.csv(DestFile, header = TRUE, sep = ',')}
+```
+
+Show the number of **Rows** and **Columns** of data
+
+Data Rows = `r format(dim(df_Test)[1], big.mark = ',')`  
+Data Columns = `r format(dim(df_Test)[2], big.mark = ',')`
+
+--- .class #id
+<font color='Red'>
+STEP 2 - CONVERT TEST DATA TO HAVE THE SAME COLUMNS AS THE TRAINING DATA
+</font>
+```{r echo = TRUE}
+# Remove last column (classe) as it is not required
+Cols2Keep <- colnames(df_Train_60[, -ncol(df_Train_60)])
+df_Test <- df_Test[Cols2Keep]
+```
+
+Show the number of **Rows** and **Columns** of data **after converting the columns in the test data to be the same as the training data**
+
+Data Rows = `r format(dim(df_Test)[1], big.mark = ',')`  
+Data Columns = `r format(dim(df_Test)[2], big.mark = ',')`
+
+--- .class #id
+<font color='Red'>
+STEP 3 - DEFINE FUNCTION TO GENERATE RESULTS FILES FOR SUBMISSION
+</font>
+```{r echo = TRUE}
+pml_write_files = function(x) {
+  n = length(x)
+  for(i in 1:n) {
+      filename = paste0("./Part2_Results/problem_id_",i,".txt")
+      write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+
+--- .class #id
+<font color='Red'>
+STEP 4 - PERFORM PREDICTION - USE **RANDOM FOREST** MODEL AS IT IS THE BEST
+</font>
+```{r echo = TRUE}
+RF_Prediction_Test <- predict(PredictionModel2, df_Test, type = 'class')
+```
+
+<font color='Red'>
+STEP 5 - SHOW THE RESULTS OF THE PREDICTION
+</font>
+```{r echo = TRUE}
+RF_Prediction_Test
+```
+
+<font color='Red'>
+STEP 6 - OUTPUT THE RESULTS TO TEXT FILES
+</font>
+```{r echo = TRUE, eval = FALSE}
+pml_write_files(RF_Prediction_Test)
+```
+
+### ~ END ~
